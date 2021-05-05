@@ -15,6 +15,8 @@ for device in gpu_devices:
 (x_train, y_train), (x_test, y_test) = load()
 x_train = x_train.astype(np.float32)
 y_train = y_train.astype(np.int64)
+x_test = x_test.astype(np.float32)
+y_test = y_test.astype(np.int64)
 
 ####################################
 
@@ -39,8 +41,10 @@ alpha_3 = counts[3] / np.sum(counts)
 weight = counts / np.sum(counts)
 weight = 1. / weight
 weight = weight / np.max(weight)
+weight[1] *= 100
+weight[2] *= 300
+weight[3] *= 100
 weight_tf = tf.constant(weight, dtype=tf.float32)
-weight_tf = weight_tf * 1000
 
 ####################################
 
@@ -64,18 +68,22 @@ up_pool(2),
 conv_block((3,3,32,32)),
 up_pool(2),
 
-conv_block((3,3,32,4))
+conv_block((3,3,32,32)),
+conv_block((3,3,32,4), relu=False)
 ])
 
 ####################################
 
 params = model.get_params()
-optimizer = tf.keras.optimizers.Adam(lr=0.01)
+optimizer = tf.keras.optimizers.Adam(lr=0.001)
 
 ####################################
 
-def pred(model, x):
-    return model.train(x)
+@tf.function(experimental_relax_shapes=False)
+def predict(model, x):
+    out = model.train(x)
+    out = tf.argmax(out, axis=-1)
+    return out
 
 @tf.function(experimental_relax_shapes=False)
 def gradients(model, x, y):
@@ -97,8 +105,11 @@ def gradients(model, x, y):
 def eval(labels, preds):
     assert (np.shape(labels) == np.shape(preds))
     assert (len(np.shape(labels)) == 4)
-    correct = (labels == preds) * labels
-    correct = np.sum(correct, axis=(0,1,2))
+    tp = (labels == 1) * (preds == 1)
+    fn = (labels == 1) * (preds == 0)
+    tn = (labels == 0) * (preds == 0)
+    fp = (labels == 0) * (preds == 1)
+    correct = np.sum(tp, axis=(0,1,2))
     total = np.sum(labels, axis=(0,1,2))
     assert (np.all(correct <= total))
     return correct, total
@@ -106,7 +117,7 @@ def eval(labels, preds):
 ####################################
 
 batch_size = 10
-for _ in range(10):
+for _ in range(20):
     _correct, _total = 0, 0
     for batch in range(0, len(x_train), batch_size):
         xs = x_train[batch:batch+batch_size]
@@ -127,8 +138,30 @@ for _ in range(10):
 
 ####################################
 
+colors = np.array([
+[0, 0, 0],
+[1, 0, 0],
+[0, 1, 0],
+[0, 0, 1]
+])
 
+batch_size = 10
+for batch in range(0, len(x_test), batch_size):
+    xs = x_test[batch:batch+batch_size]
+    ys = y_test[batch:batch+batch_size]
+    
+    out = predict(model, xs)
+    out_np = out.numpy()
+    for i in range(batch_size):
+        p = np.zeros(shape=(512, 512, 3))
+        g = np.zeros(shape=(512, 512, 3))
+        for c in range(4):
+            p += (out_np[i, :, :] == c).reshape(512, 512, 1) * colors[c]
+            g +=     (ys[i, :, :] == c).reshape(512, 512, 1) * colors[c]
+        im = np.concatenate((p, g), axis=1)
+        plt.imsave('%d.jpg' % (batch + i), im, dpi=300)
 
+####################################
 
 
 

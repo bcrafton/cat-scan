@@ -43,11 +43,12 @@ class layer:
 #############
         
 class conv_block(layer):
-    def __init__(self, shape):
+    def __init__(self, shape, relu=True):
         self.layer_id = layer.layer_id
         layer.layer_id += 1
 
         self.k, _, self.f1, self.f2 = shape
+        self.relu = relu
 
         self.f = tf.Variable(init_filters(size=[self.k,self.k,self.f1,self.f2], init='glorot_uniform'), dtype=tf.float32, name='f_%d' % (self.layer_id))
         self.b = tf.Variable(np.zeros(shape=(self.f2)), dtype=tf.float32, name='b_%d' % (self.layer_id))
@@ -57,8 +58,9 @@ class conv_block(layer):
         conv = tf.nn.conv2d(x, self.f, [1,1,1,1], 'SAME')
         mu, var = tf.nn.moments(conv, axes=[0,1,2])
         bn = tf.nn.batch_normalization(conv, mu, var, self.b, self.g, 1e-5)
-        relu = tf.nn.relu(bn)
-        return relu
+        if self.relu: out = tf.nn.relu(bn)
+        else:         out = tf.nn.sigmoid(bn)
+        return out
 
     def get_params(self):
         return [self.f, self.b, self.g]
